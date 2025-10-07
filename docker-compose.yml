@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vinylhound-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vinylhound
+      POSTGRES_PASSWORD: localpassword
+      POSTGRES_DB: vinylhound
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+
+  # api:
+  #   image: golang:1.21
+  #   container_name: vinyhound-api
+  #   depends_on:
+  #     - postgres
+  #   working_dir: /app
+  #   environment:
+  #     DATABASE_URL: postgres://vinyhound:localpassword@postgres:5432/vinyhound?sslmode=disable
+  #     PORT: "8080"
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - .:/app
+  #   command: go run ./cmd/vinyhound
+
+volumes:
+  pgdata:
