@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,12 @@ func main() {
 	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found: %v", err)
+	}
+
+	// Validate required environment variables
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is required")
 	}
 
 	// Service URLs
@@ -38,41 +45,57 @@ func main() {
 	// Setup router
 	router := mux.NewRouter()
 
-	// Add CORS middleware
+	// Add CORS middleware (applied to all routes)
 	router.Use(middleware.CORS(middleware.DefaultCORSConfig()))
 
-	// Health check
+	// Health check (public endpoint - no auth required)
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	}).Methods("GET")
 
-	// API routes
-	api := router.PathPrefix("/api/v1").Subrouter()
+	// Public API routes (no authentication required)
+	publicAPI := router.PathPrefix("/api/v1").Subrouter()
 
-	// User service routes
-	api.PathPrefix("/auth").Handler(userProxy)
-	api.PathPrefix("/users").Handler(userProxy)
+	// Authentication endpoints (signup, login) - public
+	publicAPI.PathPrefix("/auth/signup").Handler(userProxy)
+	publicAPI.PathPrefix("/auth/login").Handler(userProxy)
 
-	// Catalog service routes
-	api.PathPrefix("/albums").Handler(catalogProxy)
-	api.PathPrefix("/artists").Handler(catalogProxy)
-	api.PathPrefix("/songs").Handler(catalogProxy)
-	api.PathPrefix("/catalog").Handler(catalogProxy)
+	// Public catalog browsing - anyone can view albums
+	publicAPI.PathPrefix("/albums").Handler(catalogProxy).Methods("GET", "OPTIONS")
+	publicAPI.PathPrefix("/artists").Handler(catalogProxy).Methods("GET", "OPTIONS")
+	publicAPI.PathPrefix("/songs").Handler(catalogProxy).Methods("GET", "OPTIONS")
+	publicAPI.PathPrefix("/catalog").Handler(catalogProxy).Methods("GET", "OPTIONS")
 
-	// Rating service routes
-	api.PathPrefix("/ratings").Handler(ratingProxy)
-	api.PathPrefix("/reviews").Handler(ratingProxy)
-	api.PathPrefix("/preferences").Handler(ratingProxy)
+	// Protected API routes (authentication required)
+	protectedAPI := router.PathPrefix("/api/v1").Subrouter()
+	protectedAPI.Use(authenticationMiddleware())
 
-	// Playlist service routes
-	api.PathPrefix("/playlists").Handler(playlistProxy)
+	// User management (protected)
+	protectedAPI.PathPrefix("/users").Handler(userProxy)
+	protectedAPI.PathPrefix("/me").Handler(userProxy)
+
+	// Album management - write operations require auth
+	protectedAPI.PathPrefix("/albums").Handler(catalogProxy).Methods("POST", "PUT", "DELETE")
+	protectedAPI.PathPrefix("/artists").Handler(catalogProxy).Methods("POST", "PUT", "DELETE")
+	protectedAPI.PathPrefix("/songs").Handler(catalogProxy).Methods("POST", "PUT", "DELETE")
+
+	// Rating and review service (all operations protected)
+	protectedAPI.PathPrefix("/ratings").Handler(ratingProxy)
+	protectedAPI.PathPrefix("/reviews").Handler(ratingProxy)
+	protectedAPI.PathPrefix("/preferences").Handler(ratingProxy)
+
+	// Playlist service (all operations protected)
+	protectedAPI.PathPrefix("/playlists").Handler(playlistProxy)
 
 	// Start server
 	port := getEnv("PORT", "8080")
 	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
+		Addr:         ":" + port,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	// Start server in goroutine
@@ -82,6 +105,7 @@ func main() {
 		log.Printf("Catalog Service: %s", catalogServiceURL)
 		log.Printf("Rating Service: %s", ratingServiceURL)
 		log.Printf("Playlist Service: %s", playlistServiceURL)
+		log.Printf("Authentication: ENABLED")
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
@@ -106,13 +130,59 @@ func main() {
 	log.Println("Server exited")
 }
 
+// authenticationMiddleware validates the Authorization header
+// Note: This is a basic implementation that checks for Bearer token presence
+// In production, you should validate tokens against the user service or database
+func authenticationMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract token from Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, `{"error":"Missing authorization header"}`, http.StatusUnauthorized)
+				w.Header().Set("Content-Type", "application/json")
+				return
+			}
+
+			// Check for Bearer token format
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				http.Error(w, `{"error":"Invalid authorization format. Expected: Bearer <token>"}`, http.StatusUnauthorized)
+				w.Header().Set("Content-Type", "application/json")
+				return
+			}
+
+			token := strings.TrimPrefix(authHeader, "Bearer ")
+			if token == "" {
+				http.Error(w, `{"error":"Missing token"}`, http.StatusUnauthorized)
+				w.Header().Set("Content-Type", "application/json")
+				return
+			}
+
+			// Token validation is delegated to backend services
+			// The gateway only validates presence and format
+			// Backend services should validate token authenticity
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func createProxy(targetURL string) *httputil.ReverseProxy {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		log.Fatalf("Invalid target URL %s: %v", targetURL, err)
 	}
 
-	return httputil.NewSingleHostReverseProxy(target)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Add error handler for upstream failures
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("Proxy error for %s: %v", r.URL.Path, err)
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"Service temporarily unavailable"}`, http.StatusBadGateway)
+	}
+
+	return proxy
 }
 
 func getEnv(key, defaultValue string) string {

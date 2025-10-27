@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"net/http"
+	"os"
+	"strings"
 )
 
 // CORSConfig holds CORS configuration
@@ -12,9 +14,32 @@ type CORSConfig struct {
 }
 
 // DefaultCORSConfig returns a default CORS configuration
+// Reads CORS_ALLOWED_ORIGINS from environment variable if available
 func DefaultCORSConfig() *CORSConfig {
+	// Read allowed origins from environment
+	originsEnv := os.Getenv("CORS_ALLOWED_ORIGINS")
+	var allowedOrigins []string
+
+	if originsEnv != "" {
+		// Split by comma and trim whitespace
+		origins := strings.Split(originsEnv, ",")
+		for _, origin := range origins {
+			trimmed := strings.TrimSpace(origin)
+			if trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+	} else {
+		// Default for development
+		allowedOrigins = []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+			"http://localhost:8080",
+		}
+	}
+
 	return &CORSConfig{
-		AllowedOrigins: []string{"http://localhost:3000", "http://localhost:8080"},
+		AllowedOrigins: allowedOrigins,
 		AllowedMethods: []string{
 			http.MethodGet,
 			http.MethodPost,
