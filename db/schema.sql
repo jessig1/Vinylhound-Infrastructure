@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS playlists (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tags TEXT[] DEFAULT '{}',
     is_public BOOLEAN DEFAULT FALSE,
+    is_favorite BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -119,6 +120,21 @@ CREATE TABLE IF NOT EXISTS playlist_songs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(playlist_id, position)
+);
+
+-- Favorites table
+CREATE TABLE IF NOT EXISTS favorites (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    song_id BIGINT REFERENCES songs(id) ON DELETE CASCADE,
+    album_id BIGINT REFERENCES albums(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT check_favorite_type CHECK (
+        (song_id IS NOT NULL AND album_id IS NULL) OR
+        (song_id IS NULL AND album_id IS NOT NULL)
+    ),
+    CONSTRAINT unique_user_song_favorite UNIQUE (user_id, song_id),
+    CONSTRAINT unique_user_album_favorite UNIQUE (user_id, album_id)
 );
 
 -- Indexes for performance
@@ -141,8 +157,13 @@ CREATE INDEX IF NOT EXISTS idx_reviews_album_id ON reviews(album_id);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_genre ON user_preferences(genre);
 CREATE INDEX IF NOT EXISTS idx_playlists_owner ON playlists(owner);
+CREATE INDEX IF NOT EXISTS idx_playlists_is_favorite ON playlists(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs(playlist_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_artist ON playlist_songs(artist);
+CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_song_id ON favorites(song_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_album_id ON favorites(album_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_user_favorite ON playlists(user_id) WHERE is_favorite = TRUE;
 
 -- Sample data for development
 -- Seed core artists

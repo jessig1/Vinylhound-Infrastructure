@@ -33,6 +33,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Please set JWT_SECRET in .env file}
       PORT: ${BACKEND_PORT:-8080}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
