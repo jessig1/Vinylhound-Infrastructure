@@ -33,6 +33,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Please set JWT_SECRET in .env file}
       PORT: ${BACKEND_PORT:-8080}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-vinylhound}
+      DB_PASSWORD: ${DB_PASSWORD:?Please set DB_PASSWORD in .env file}
+      DB_NAME: ${DB_NAME:-vinylhound}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -52,7 +60,7 @@ services:
     container_name: vinylhound-web-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-5173}:3000"
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
     depends_on:
